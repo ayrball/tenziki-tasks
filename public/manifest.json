@@ -1,0 +1,17 @@
+{
+  "short_name": "Tasks",
+  "name": "Tenziki Tasks",
+  "description": "A fast, minimal task manager that syncs across your devices.",
+  "icons": [
+    { "src": "/icons/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ],
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "background_color": "#09090e",
+  "theme_color": "#5b4cf5",
+  "display": "standalone"
+}

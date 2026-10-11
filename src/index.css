@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+/* The theme toggle puts a `dark` class on <html>; make `dark:` follow it (Tailwind v4 defaults to the OS setting). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Design tokens ---------- */
+:root {
+  color-scheme: light;
+  --bg: #f6f6fb;
+  --surface: #ffffff;
+  --surface-2: #f0f0f7;
+  --line: #e7e7f0;
+  --line-strong: #d5d5e3;
+  --fg: #15151e;
+  --muted: #5a5a74;
+  --faint: #6b6b84;
+  --accent: #5b4cf5;
+  --accent-2: #a14bf0;
+  --accent-soft: rgba(91, 76, 245, 0.1);
+  /* Solid fills carrying white text. Darker than the text accents so contrast passes AA in both themes. */
+  --fill: #5b4cf5;
+  --fill-2: #8a3fe0;
+  --danger-fill: #dc2626;
+  --success: #0f9f6e;
+  --danger: #d11a41;
+  --glow-1: rgba(110, 90, 255, 0.16);
+  --glow-2: rgba(244, 114, 182, 0.12);
+  --sh-card: 0 1px 2px rgba(22, 22, 48, 0.04), 0 10px 28px -14px rgba(22, 22, 48, 0.14);
+  --sh-pop: 0 2px 6px rgba(22, 22, 48, 0.08), 0 18px 44px -12px rgba(22, 22, 48, 0.26);
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #09090e;
+  --surface: #13131b;
+  --surface-2: #1b1b26;
+  --line: #242432;
+  --line-strong: #323244;
+  --fg: #f3f3f9;
+  --muted: #a5a5bb;
+  --faint: #8484a0;
+  --accent: #8b7dff;
+  --accent-2: #c084fc;
+  --accent-soft: rgba(139, 125, 255, 0.15);
+  --success: #34d399;
+  --danger: #fb7185;
+  --glow-1: rgba(110, 90, 255, 0.2);
+  --glow-2: rgba(244, 114, 182, 0.08);
+  --sh-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 12px 32px -16px rgba(0, 0, 0, 0.65);
+  --sh-pop: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 20px 50px -12px rgba(0, 0, 0, 0.8);
+}
+
+@theme inline {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
+  --color-danger-fill: var(--danger-fill);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+
+  --shadow-card: var(--sh-card);
+  --shadow-pop: var(--sh-pop);
+}
+
+/* ---------- Base ---------- */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Soft ambient light behind the content */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(56rem 26rem at 50% -9rem, var(--glow-1), transparent 70%),
+    radial-gradient(34rem 22rem at 105% 18%, var(--glow-2), transparent 70%);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+:where(button, a, summary, select, [tabindex]):focus-visible,
+:where(input, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Inputs that live inside a bordered container show focus on the container instead */
+.bare-input,
+.bare-input:focus-visible {
+  outline: none;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 9999px;
+}
+
+/* Hidden native date inputs that open the system calendar */
+.date-proxy {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

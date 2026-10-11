@@ -1,0 +1,37 @@
+{
+  "name": "tenziki-tasks",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "dev:api": "wrangler dev --local --port 8787",
+    "preview": "vite preview",
+    "db:migrate:local": "wrangler d1 migrations apply todo-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply todo-db --remote",
+    "deploy": "vite build && wrangler deploy",
+    "test": "node tests/run.mjs",
+    "test:unit": "node --test \"tests/unit/*.test.mjs\"",
+    "test:all": "npm run test:unit && npm test"
+  },
+  "dependencies": {
+    "canvas-confetti": "^1.9.4",
+    "framer-motion": "^13.4.4",
+    "lucide-react": "^1.48.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "sharp": "^0.35.5",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.0",
+    "wrangler": "^4.148.0"
+  }
+}

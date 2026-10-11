@@ -1,0 +1,30 @@
+{
+  "name": "todo-app",
+  "main": "src/worker.js",
+  "compatibility_date": "2024-09-23",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "todo_db",
+      "database_name": "todo-db",
+      "database_id": "4125d648-9d30-435e-a739-fa77bd60e061",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Public OAuth client id from Google Cloud Console (APIs & Services > Credentials).
+  // SESSION_SECRET is a secret: set it with `npx wrangler secret put SESSION_SECRET`.
+  "vars": {
+    "GOOGLE_CLIENT_ID": "668640933176-q7ertl59af70ijujtt71tsmn55q3ra3r.apps.googleusercontent.com"
+  },
+  "routes": [
+    {
+      "pattern": "todo.tenziki.com",
+      "custom_domain": true
+    }
+  ]
+}

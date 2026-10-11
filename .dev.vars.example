@@ -1,0 +1,5 @@
+# Copy this file to .dev.vars (git-ignored) for `wrangler dev` and `npm test`.
+# Use any long random value here; it is only for your machine. Never commit the real .dev.vars.
+SESSION_SECRET=replace-me-with-a-long-random-string-for-local-use-only
+# Optional: your public Google OAuth client id, to try real sign-in locally.
+GOOGLE_CLIENT_ID=
