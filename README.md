@@ -96,3 +96,9 @@ Earlier versions identified users by an unverified email-derived id (`google-<em
 - Sign-in uses Google only.
 - Conflicts are last-write-wins per change: if two devices edit the same task while offline, the later change to reach the server wins.
 - The session token is kept in `localStorage`. The CSP and React's escaping guard against script injection; an httpOnly-cookie session would be a further hardening step.
+
+## License
+
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). You are free to use, modify and share this for personal, hobby, educational, research and other noncommercial purposes.
+
+**Commercial use** (selling it, building a paid product or service on it, or using it in a business) needs a separate license from the author. Commercial licenses are available: get in touch via [github.com/ayrball](https://github.com/ayrball) to discuss terms.
