@@ -1,3 +1,4 @@
+import './lib/installPrompt.js' // first: starts listening for the browser's install event before the UI mounts
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'

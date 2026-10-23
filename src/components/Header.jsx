@@ -4,6 +4,7 @@ import { Check, LogIn, Moon, RefreshCw, Sun, WifiOff } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
 import { useAuth } from '../context/AuthContext';
 import { getGreeting } from '../lib/dateUtils';
+import InstallApp from './InstallApp';
 
 const dateFormat = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
@@ -79,6 +80,7 @@ export default function Header({ onOpenAuth, isDarkMode, onToggleTheme }) {
 
         <div className="flex items-center gap-2">
           <SyncStatus />
+          <InstallApp />
 
           <motion.button
             type="button"
