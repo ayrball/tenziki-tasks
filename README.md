@@ -5,6 +5,8 @@ A fast, minimal task manager. React 19 + Vite + Tailwind 4 + Framer Motion on th
 - Works without an account: tasks are saved in the browser.
 - Sign in with Google to sync across devices. Tasks created while signed out are moved into the account on first sign-in.
 - **Bars:** your own named, coloured sections that tasks live in (they replace the old fixed categories). Add, rename, recolour, reorder, collapse and delete them. **Drag a task** by its grip handle to reorder it or move it to another bar (mouse, touch or keyboard), or use "Move to" in the task. Deleting a bar never deletes its tasks: they move to the first remaining bar.
+- **Drag a task onto a tab** to change it: **Today** sets it due today, **Urgent** makes it High priority, **Done** marks it done, **Deleted** moves it to Deleted. Each shows an Undo, and the task keeps its bar and its place. Dropping a done task on Today or Urgent reopens it. While you drag, the tab bar floats into view so it is always within reach. With the keyboard: focus a task's grip, press Space to pick it up, ArrowUp to reach the tabs (Today first), ArrowLeft/Right to choose one, then Space to drop (Escape cancels).
+- **Bars on/off:** the "Bars" switch next to the search box shows tasks as one plain list instead. It only changes the view (every task keeps its bar and order), is remembered per device, and tasks can still be dragged onto tabs in the plain list.
 - Priorities, due dates (stored as real dates), notes (autosaved), search, filters, light/dark theme.
 - **Deleted section:** deleting moves a task there (with Undo). Restore it, or delete it forever (two clicks). Anything left there is removed after 30 days.
 - **Works offline:** installable as an app. Changes made offline are queued, survive a reload, and are sent in order when you're back online. Open tabs and devices pick up each other's changes automatically.
@@ -46,7 +48,7 @@ Open <http://localhost:5173>. Without a Google client id the app runs in local-o
 ## Tests
 
 ```bash
-npm run test:unit   # dates, offline queue, export, install help, bar ordering (fast, no server)
+npm run test:unit   # dates, offline queue, export, install help, bar ordering, tab-drop rules (fast, no server)
 npm test            # API tests against a throwaway Worker + database (starts and stops its own)
 npm run test:all
 ```
@@ -91,7 +93,8 @@ Earlier versions identified users by an unverified email-derived id (`google-<em
 | `public/_headers`, `public/sw.js` | Security headers; offline service worker |
 | `src/context/` | Auth, tasks (optimistic updates, offline queue, live sync, undo), toasts |
 | `src/components/` | UI |
-| `src/lib/` | API client, offline queue, dates, export, limits, bar and ordering logic (`lists.js`), shared task metadata |
+| `src/components/DragBoard.jsx` | Drag and drop for the whole task area (tabs, bars, tasks) |
+| `src/lib/` | API client, offline queue, dates, export, limits, bar and ordering logic (`lists.js`), tab-drop rules (`tabDrop.js`), the Bars switch (`barsPref.js`), shared task metadata |
 | `src/index.css` | Design tokens (light/dark, checked for WCAG AA contrast) |
 | `tests/` | API and unit tests |
 | `scripts/make-icons.mjs` | Regenerates the PNG app icons |
@@ -99,6 +102,7 @@ Earlier versions identified users by an unverified email-derived id (`google-<em
 ## Known limits
 
 - Sign-in uses Google only.
+- With bars off, tasks can be dragged onto tabs but not reordered (ordering belongs to bars).
 - Dragging into a bar works with the bars you can see: in Today, Urgent and Done only bars that have a matching task are shown, so to move a task into a hidden bar use "Move to" in the task or switch to All (which shows every bar, even empty ones).
 - Conflicts are last-write-wins per change: if two devices edit the same task while offline, the later change to reach the server wins.
 - The session token is kept in `localStorage`. The CSP and React's escaping guard against script injection; an httpOnly-cookie session would be a further hardening step.

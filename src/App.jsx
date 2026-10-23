@@ -7,6 +7,7 @@ import { ToastProvider } from './context/ToastContext';
 import Header from './components/Header';
 import SummaryCard from './components/SummaryCard';
 import TaskInput from './components/TaskInput';
+import DragBoard from './components/DragBoard';
 import FilterBar from './components/FilterBar';
 import TaskList from './components/TaskList';
 import AuthModal from './components/AuthModal';
@@ -45,10 +46,12 @@ function MainApp() {
       <main className="flex-1">
         <SummaryCard />
         <TaskInput />
-        <FilterBar />
-        <div id="task-panel" role="tabpanel">
-          <TaskList />
-        </div>
+        <DragBoard>
+          <FilterBar />
+          <div id="task-panel" role="tabpanel">
+            <TaskList />
+          </div>
+        </DragBoard>
       </main>
 
       <footer className="mt-12 flex flex-col items-center gap-1.5 text-center text-xs text-faint">

@@ -4,6 +4,7 @@ import { api } from '../lib/apiClient';
 import { addDays, getTodayDateString, normalizeDueDate } from '../lib/dateUtils';
 import { LIST_NAME_MAX, MAX_LISTS_PER_USER } from '../lib/limits';
 import { compareTasks, nextBarColor, planGuestImport, planMove, seedLists } from '../lib/lists';
+import { dropOnTab, previousValues } from '../lib/tabDrop';
 import { drainQueue, loadQueue, retryDelayMs, runOp, saveQueue } from '../lib/syncQueue';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -604,6 +605,31 @@ export function TaskProvider({ children }) {
     notify(`Permanently deleted ${count} task${count === 1 ? '' : 's'}`);
   }, [enqueue, notify]);
 
+  // A task dragged onto a tab at the top: Today, Urgent, Done or Deleted (see src/lib/tabDrop.js for the rules).
+  const moveToTab = useCallback(
+    (id, tabId) => {
+      const task = tasksRef.current.find((t) => t.id === id && !t.deleted_at);
+      if (!task) return;
+      const result = dropOnTab(tabId, task, getTodayDateString());
+      if (!result) return;
+
+      if (result.unchanged) {
+        notify(result.unchanged);
+        return;
+      }
+      if (result.action === 'delete') {
+        deleteTask(id); // soft delete, with its own Undo
+        return;
+      }
+
+      const previous = previousValues(task, result.updates);
+      if (result.updates.completed === true) toggleTask(id); // same path as the checkbox, so finishing the last task still celebrates
+      else editTask(id, result.updates);
+      notify(result.label, { action: { label: 'Undo', onClick: () => editTask(id, previous) } });
+    },
+    [notify, deleteTask, toggleTask, editTask]
+  );
+
   const markAllComplete = useCallback(() => {
     if (!tasksRef.current.some((t) => !t.completed && !t.deleted_at)) return;
     setTasks((prev) => prev.map((t) => (t.deleted_at ? t : { ...t, completed: true })));
@@ -680,6 +706,7 @@ export function TaskProvider({ children }) {
     setSearchQuery,
     addTask,
     moveTask,
+    moveToTab,
     addList,
     updateList,
     moveList,

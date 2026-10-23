@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Calendar, ChevronDown, Flag, Pencil, StickyNote, Trash2 } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
+import { useBarsEnabled } from '../lib/barsPref';
 import { formatDisplayDate, isOverdue, isTaskDueToday } from '../lib/dateUtils';
 import { PRIORITIES, openDatePicker, priorityMeta } from '../lib/taskMeta';
 
@@ -10,6 +11,7 @@ const chip = 'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px
 // `handle` is the drag handle supplied by the sortable row that wraps this card (absent where dragging isn't offered).
 export default function TaskItem({ task, handle = null }) {
   const { toggleTask, deleteTask, editTask, moveTask, lists } = useTasks();
+  const [barsOn] = useBarsEnabled();
   const [isEditing, setIsEditing] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
@@ -265,7 +267,7 @@ export default function TaskItem({ task, handle = null }) {
                     ))}
                   </div>
 
-                  {lists.length > 0 && (
+                  {barsOn && lists.length > 0 && (
                     <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted">
                       <span>Move to</span>
                       <select

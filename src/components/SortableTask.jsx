@@ -1,9 +1,9 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical } from 'lucide-react';
+import DragHandle from './DragHandle';
 import TaskItem from './TaskItem';
 
-// A task row that can be dragged (by its grip handle) to reorder it or move it to another bar.
+// A task row that can be dragged (by its grip handle) to reorder it, move it to another bar, or drop it on a tab.
 // The handle is a real button, so it also works with the keyboard: Space to pick up, arrow keys to move, Space to drop.
 // `indicator` draws a line where a task from another bar would land.
 export default function SortableTask({ task, listId, indicator = null }) {
@@ -13,16 +13,12 @@ export default function SortableTask({ task, listId, indicator = null }) {
   });
 
   const handle = (
-    <button
-      type="button"
-      ref={setActivatorNodeRef}
-      {...attributes}
-      {...listeners}
-      aria-label={`Drag "${task.title}" to reorder or move to another bar`}
-      className="mt-px flex h-7 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-faint transition-colors hover:bg-surface-2 hover:text-fg active:cursor-grabbing"
-    >
-      <GripVertical className="h-4 w-4" aria-hidden />
-    </button>
+    <DragHandle
+      label={`Drag "${task.title}" to reorder, move to another bar or drop on a tab`}
+      activatorRef={setActivatorNodeRef}
+      attributes={attributes}
+      listeners={listeners}
+    />
   );
 
   const line =
@@ -35,10 +31,19 @@ export default function SortableTask({ task, listId, indicator = null }) {
   return (
     <li
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`relative list-none ${line}`}
     >
-      <TaskItem task={task} handle={handle} />
+      {/* While it is being dragged, its old spot shows an empty dashed slot (the card itself floats with the pointer). */}
+      <div className={isDragging ? 'opacity-0' : undefined}>
+        <TaskItem task={task} handle={handle} />
+      </div>
+      {isDragging && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 bottom-2 rounded-2xl border-2 border-dashed border-accent/40 bg-accent-soft"
+        />
+      )}
     </li>
   );
 }

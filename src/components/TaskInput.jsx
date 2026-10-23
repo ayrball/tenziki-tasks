@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowUp, Calendar, CalendarX2, Plus, StickyNote } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
+import { useBarsEnabled } from '../lib/barsPref';
 import { formatDisplayDate, getTodayDateString, getTomorrowDateString } from '../lib/dateUtils';
 import { PRIORITIES, barDot, openDatePicker } from '../lib/taskMeta';
 
@@ -15,6 +16,7 @@ function isTypingTarget(el) {
 
 export default function TaskInput() {
   const { addTask, lists } = useTasks();
+  const [barsOn] = useBarsEnabled();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [showNote, setShowNote] = useState(false);
@@ -170,6 +172,7 @@ export default function TaskInput() {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                {barsOn && lists.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Add to bar">
                   {lists.map((l) => (
                     <button
@@ -184,6 +187,9 @@ export default function TaskInput() {
                     </button>
                   ))}
                 </div>
+                ) : (
+                  <span aria-hidden />
+                )}
 
                 <div className="flex items-center gap-1" role="group" aria-label="Priority">
                   {PRIORITIES.map((p) => (

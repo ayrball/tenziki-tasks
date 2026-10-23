@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
+import { useBarsEnabled } from '../lib/barsPref';
 import { timeAgo } from '../lib/dateUtils';
 import { barDot } from '../lib/taskMeta';
 
@@ -11,6 +12,7 @@ const CONFIRM_WINDOW_MS = 4000;
 export default function DeletedItem({ task }) {
   const { restoreTask, deleteForever, listById } = useTasks();
   const bar = listById.get(task.list_id);
+  const [barsOn] = useBarsEnabled();
   const [confirming, setConfirming] = useState(false);
 
   // The confirm state expires so a stray click later can't permanently delete anything.
@@ -42,10 +44,12 @@ export default function DeletedItem({ task }) {
             <span className="whitespace-nowrap rounded-md bg-surface-2 px-1.5 py-0.5 leading-4 text-muted">
               Deleted {timeAgo(task.deleted_at)}
             </span>
-            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-surface-2 px-1.5 py-0.5 leading-4 text-muted">
-              <span className={`h-1.5 w-1.5 rounded-full ${barDot(bar?.color)}`} aria-hidden />
-              {bar?.name ?? 'No bar'}
-            </span>
+            {barsOn && (
+              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-surface-2 px-1.5 py-0.5 leading-4 text-muted">
+                <span className={`h-1.5 w-1.5 rounded-full ${barDot(bar?.color)}`} aria-hidden />
+                {bar?.name ?? 'No bar'}
+              </span>
+            )}
           </div>
         </div>
 
