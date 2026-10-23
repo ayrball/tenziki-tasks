@@ -52,4 +52,15 @@ export const api = {
   emptyTrash: (token) => request('POST', '/api/tasks/empty-trash', { token, body: {} }),
   clearCompleted: (token) => request('POST', '/api/tasks/clear-completed', { token, body: {} }),
   completeAll: (token) => request('POST', '/api/tasks/complete-all', { token, body: {} }),
+  // Move/reposition many tasks at once: moves = [{ id, list_id?, position }]
+  reorderTasks: (token, moves) => request('POST', '/api/tasks/reorder', { token, body: { moves } }),
+
+  // Bars (the user's named sections)
+  listBars: (token) => request('GET', '/api/lists', { token }),
+  createBar: (token, bar) => request('POST', '/api/lists', { token, body: bar }),
+  updateBar: (token, id, updates) => request('PUT', `/api/lists/${encodeURIComponent(id)}`, { token, body: updates }),
+  // Tasks in the deleted bar move to `moveTo` (or the first remaining bar); they are never deleted.
+  deleteBar: (token, id, moveTo) =>
+    request('DELETE', `/api/lists/${encodeURIComponent(id)}${moveTo ? `?moveTo=${encodeURIComponent(moveTo)}` : ''}`, { token }),
+  reorderBars: (token, ids) => request('PUT', '/api/lists/order', { token, body: { ids } }),
 };

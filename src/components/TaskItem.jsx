@@ -3,12 +3,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Calendar, ChevronDown, Flag, Pencil, StickyNote, Trash2 } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
 import { formatDisplayDate, isOverdue, isTaskDueToday } from '../lib/dateUtils';
-import { CATEGORIES, PRIORITIES, categoryDot, openDatePicker, priorityMeta } from '../lib/taskMeta';
+import { PRIORITIES, openDatePicker, priorityMeta } from '../lib/taskMeta';
 
 const chip = 'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold leading-4';
 
-export default function TaskItem({ task }) {
-  const { toggleTask, deleteTask, editTask } = useTasks();
+// `handle` is the drag handle supplied by the sortable row that wraps this card (absent where dragging isn't offered).
+export default function TaskItem({ task, handle = null }) {
+  const { toggleTask, deleteTask, editTask, moveTask, lists } = useTasks();
   const [isEditing, setIsEditing] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
@@ -88,20 +89,20 @@ export default function TaskItem({ task }) {
       : 'bg-surface-2 text-muted';
 
   return (
-    <motion.li
-      layout="position"
+    <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0, paddingBottom: 0, transition: { duration: 0.18 } }}
       transition={{ type: 'spring', stiffness: 460, damping: 36 }}
-      className="list-none pb-2"
+      className="pb-2"
     >
       <div
         className={`group rounded-2xl border bg-surface shadow-card transition-colors ${
           isOpen ? 'border-accent/40' : 'border-line hover:border-line-strong'
         }`}
       >
-        <div className="flex items-start gap-3 p-3.5">
+        <div className="flex items-start gap-2.5 p-3.5 pl-2">
+          {handle ?? <span className="w-1" aria-hidden />}
           <motion.button
             type="button"
             whileTap={{ scale: 0.82 }}
@@ -172,10 +173,6 @@ export default function TaskItem({ task }) {
                   {overdue ? `Overdue · ${dateLabel}` : dateLabel}
                 </span>
               )}
-              <span className={`${chip} bg-surface-2 text-muted`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${categoryDot(task.category)}`} aria-hidden />
-                {task.category}
-              </span>
               {task.priority !== 'medium' && (
                 <span className={`${chip} ${priority.chip}`}>
                   <Flag className="h-3 w-3" aria-hidden />
@@ -268,20 +265,22 @@ export default function TaskItem({ task }) {
                     ))}
                   </div>
 
-                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted">
-                    <span className="sr-only">Category</span>
-                    <select
-                      value={task.category}
-                      onChange={(e) => editTask(task.id, { category: e.target.value })}
-                      className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-xs font-semibold text-fg"
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {lists.length > 0 && (
+                    <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted">
+                      <span>Move to</span>
+                      <select
+                        value={lists.some((l) => l.id === task.list_id) ? task.list_id : lists[0].id}
+                        onChange={(e) => moveTask(task.id, e.target.value)}
+                        className="rounded-lg border border-line bg-surface-2 px-2 py-1 text-xs font-semibold text-fg"
+                      >
+                        {lists.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
 
                   <div className="relative">
                     <button
@@ -318,6 +317,6 @@ export default function TaskItem({ task }) {
           )}
         </AnimatePresence>
       </div>
-    </motion.li>
+    </motion.div>
   );
 }

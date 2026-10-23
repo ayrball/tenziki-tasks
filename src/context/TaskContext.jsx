@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import confetti from 'canvas-confetti';
 import { sounds } from '../lib/audio';
 import { api } from '../lib/apiClient';
 import { addDays, getTodayDateString, normalizeDueDate } from '../lib/dateUtils';
+import { LIST_NAME_MAX, MAX_LISTS_PER_USER } from '../lib/limits';
+import { compareTasks, nextBarColor, planGuestImport, planMove, seedLists } from '../lib/lists';
 import { drainQueue, loadQueue, retryDelayMs, runOp, saveQueue } from '../lib/syncQueue';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -10,8 +11,10 @@ import { useToast } from './ToastContext';
 const TaskContext = createContext(null);
 
 const GUEST_KEY = 'tenziki_tasks_guest';
+const GUEST_LISTS_KEY = 'tenziki_lists_guest';
 const LEGACY_KEY = 'tenziki_tasks_data'; // single shared cache used before per-account storage
 const userKey = (uid) => `tenziki_tasks_${uid}`;
+const listsKey = (uid) => `tenziki_lists_${uid}`;
 
 const POLL_MS = 60000; // how often an open, visible tab checks for changes made on other devices
 const MIN_FOCUS_SYNC_MS = 10000;
@@ -80,9 +83,32 @@ function normalizeTask(task) {
 }
 
 function loadInitial(uid) {
-  if (uid) return (readStored(userKey(uid)) ?? []).map(normalizeTask);
-  const stored = readStored(GUEST_KEY) ?? readStored(LEGACY_KEY);
-  return stored ? stored.map(normalizeTask) : welcomeTasks();
+  let tasks;
+  if (uid) {
+    tasks = (readStored(userKey(uid)) ?? []).map(normalizeTask);
+  } else {
+    const stored = readStored(GUEST_KEY) ?? readStored(LEGACY_KEY);
+    tasks = stored ? stored.map(normalizeTask) : welcomeTasks();
+  }
+
+  const lists = readStored(uid ? listsKey(uid) : GUEST_LISTS_KEY);
+  if (!lists || lists.length === 0) {
+    // First run with bars, or a saved copy from before they existed: make the standard bars and file tasks into them.
+    // (A signed-in account with nothing saved yet just waits for the server's bars.)
+    if (!uid || tasks.length > 0) return seedLists(tasks);
+    return { tasks, lists: [] };
+  }
+
+  // Tasks pointing at a bar that no longer exists go to the first bar.
+  const ids = new Set(lists.map((l) => l.id));
+  return { tasks: tasks.map((t) => (ids.has(t.list_id) ? t : { ...t, list_id: lists[0].id })), lists };
+}
+
+// What was made while signed out: tasks plus the bars they're in (built from old categories if there are none yet).
+function loadGuestSnapshot() {
+  const tasks = (readStored(GUEST_KEY) ?? readStored(LEGACY_KEY) ?? []).map(normalizeTask);
+  const lists = readStored(GUEST_LISTS_KEY);
+  return lists && lists.length > 0 ? { tasks, lists } : seedLists(tasks);
 }
 
 // TaskProvider is keyed by account in App.jsx, so it remounts (and reloads its own list) on sign in/out.
@@ -91,9 +117,11 @@ export function TaskProvider({ children }) {
   const { notify } = useToast();
   const uid = user?.uid ?? null;
 
-  const [tasks, setTasks] = useState(() => loadInitial(uid));
+  const [initial] = useState(() => loadInitial(uid));
+  const [tasks, setTasks] = useState(initial.tasks);
+  const [lists, setLists] = useState(initial.lists);
   const [filter, setFilter] = useState('today');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedList, setSelectedList] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   // 'local' (not signed in) | 'syncing' | 'synced' | 'offline'
   const [syncState, setSyncState] = useState(token ? 'syncing' : 'local');
@@ -103,6 +131,10 @@ export function TaskProvider({ children }) {
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
+  const listsRef = useRef(lists);
+  useEffect(() => {
+    listsRef.current = lists;
+  }, [lists]);
 
   // Changes waiting to reach the server (persisted, so they survive going offline or reloading).
   const queueRef = useRef(uid ? loadQueue(uid) : []);
@@ -131,6 +163,13 @@ export function TaskProvider({ children }) {
       // storage full/unavailable
     }
   }, [tasks, uid]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(uid ? listsKey(uid) : GUEST_LISTS_KEY, JSON.stringify(lists));
+    } catch {
+      // storage full/unavailable
+    }
+  }, [lists, uid]);
 
   const handleUnauthorized = useCallback(() => {
     notify('You were signed out. Sign in again to keep syncing.', { tone: 'error' });
@@ -143,8 +182,9 @@ export function TaskProvider({ children }) {
     if (!token || flushingRef.current || queueRef.current.length > 0) return;
     const startedAt = mutationRef.current;
     try {
-      const remote = await api.listTasks(token);
+      const [remoteLists, remote] = await Promise.all([api.listBars(token), api.listTasks(token)]);
       if (mutationRef.current !== startedAt || queueRef.current.length > 0) return;
+      setLists(remoteLists);
       setTasks(remote.map(normalizeTask));
       setSyncState('synced');
       lastSyncRef.current = Date.now();
@@ -233,7 +273,7 @@ export function TaskProvider({ children }) {
         }
 
         const startedAt = mutationRef.current;
-        const remoteRaw = await api.listTasks(token);
+        const [remoteLists, remoteRaw] = await Promise.all([api.listBars(token), api.listTasks(token)]);
         if (cancelled) return;
         const remote = remoteRaw.map(normalizeTask);
 
@@ -244,15 +284,32 @@ export function TaskProvider({ children }) {
           }
         });
 
+        // Tasks made while signed out come along; their bars are matched to the account's bars by name,
+        // and any bar the account doesn't have yet is created.
+        const snapshot = loadGuestSnapshot();
         const known = new Set(remote.map((t) => t.id));
-        const guest = (readStored(GUEST_KEY) ?? readStored(LEGACY_KEY) ?? [])
-          .filter((t) => !isDemo(t.id) && !known.has(t.id))
-          .map(normalizeTask);
+        const guest = snapshot.tasks.filter((t) => !isDemo(t.id) && !known.has(t.id));
+        const accountLists = [...remoteLists];
+        let idMap = new Map();
+        if (guest.length > 0) {
+          const plan = planGuestImport(snapshot.lists, remoteLists);
+          idMap = plan.idMap;
+          for (const bar of plan.toCreate) {
+            try {
+              await api.createBar(token, { id: bar.id, name: bar.name, color: bar.color });
+              accountLists.push(bar);
+            } catch (err) {
+              if (err.status === 401) throw err;
+              idMap.set(bar.id, remoteLists[0]?.id);
+            }
+          }
+        }
 
         const imported = [];
         let importFailed = false;
-        for (const task of guest) {
+        for (const original of guest) {
           if (cancelled) return;
+          const task = { ...original, list_id: idMap.get(original.list_id) ?? accountLists[0]?.id };
           try {
             await api.createTask(token, task);
             imported.push(task);
@@ -264,6 +321,7 @@ export function TaskProvider({ children }) {
         if (cancelled) return;
 
         if (mutationRef.current === startedAt) {
+          setLists(accountLists);
           setTasks([...imported, ...remote].sort(byNewest));
         } else {
           // The user changed something while this loaded; show the server's list once their change is sent.
@@ -273,6 +331,7 @@ export function TaskProvider({ children }) {
         lastSyncRef.current = Date.now();
         if (!importFailed) {
           localStorage.setItem(GUEST_KEY, '[]');
+          localStorage.setItem(GUEST_LISTS_KEY, '[]');
           localStorage.removeItem(LEGACY_KEY);
         }
         if (imported.length > 0) {
@@ -323,13 +382,20 @@ export function TaskProvider({ children }) {
   const triggerCelebration = useCallback(() => {
     sounds.playSuccess();
     if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate([30, 50, 30]);
-    confetti({
-      particleCount: 90,
-      spread: 75,
-      origin: { y: 0.7 },
-      colors: ['#6d5efc', '#a78bfa', '#f472b6', '#34d399'],
-      disableForReducedMotion: true,
-    });
+    // Loaded only when it's needed (finishing everything), to keep the first load smaller.
+    import('canvas-confetti')
+      .then(({ default: confetti }) =>
+        confetti({
+          particleCount: 90,
+          spread: 75,
+          origin: { y: 0.7 },
+          colors: ['#6d5efc', '#a78bfa', '#f472b6', '#34d399'],
+          disableForReducedMotion: true,
+        })
+      )
+      .catch(() => {
+        // offline and not cached yet: skip the confetti
+      });
   }, []);
 
   const restoreTasks = useCallback(
@@ -341,18 +407,21 @@ export function TaskProvider({ children }) {
   );
 
   const addTask = useCallback(
-    ({ title, priority = 'medium', category = 'Personal', due_date = null, description = '' }) => {
+    ({ title, priority = 'medium', list_id = null, due_date = null, description = '' }) => {
       const cleanTitle = title.trim();
       if (!cleanTitle) return;
       sounds.playPop();
 
+      // Into the chosen bar, or the first one. (With no bars yet the server picks the account's first.)
+      const bars = listsRef.current;
       const task = {
         id: newId(),
         title: cleanTitle,
         description: description.trim(),
         completed: false,
         priority,
-        category,
+        list_id: bars.some((l) => l.id === list_id) ? list_id : bars[0]?.id ?? null,
+        position: -Date.now() / 1000, // nearest the top of its bar
         due_date,
         created_at: new Date().toISOString(),
       };
@@ -360,6 +429,103 @@ export function TaskProvider({ children }) {
       enqueue({ type: 'create', task });
     },
     [enqueue]
+  );
+
+  // Moves a task into a bar (or within its bar). `target` says where: { beforeId } | { afterId } | { atEnd } | {} (top).
+  const moveTask = useCallback(
+    (id, listId, target = {}) => {
+      const plan = planMove(tasksRef.current, id, listId, target);
+      if (!plan) return;
+      const renumbered = new Map((plan.rebalance ?? []).map((m) => [m.id, m.position]));
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.id === id) return { ...t, list_id: listId, position: renumbered.get(id) ?? plan.position };
+          return renumbered.has(t.id) ? { ...t, position: renumbered.get(t.id) } : t;
+        })
+      );
+      if (plan.rebalance) {
+        // Positions got too tight: renumber this bar in one go (in chunks the server accepts).
+        const moves = plan.rebalance.map((m) => ({ id: m.id, list_id: listId, position: m.position }));
+        for (let i = 0; i < moves.length; i += 500) enqueue({ type: 'reorderTasks', moves: moves.slice(i, i + 500) });
+      } else {
+        enqueue({ type: 'update', id, updates: { list_id: listId, position: plan.position } });
+      }
+    },
+    [enqueue]
+  );
+
+  const addList = useCallback(
+    (name, color) => {
+      const clean = String(name).trim().replace(/\s+/g, ' ').slice(0, LIST_NAME_MAX);
+      if (!clean) return null;
+      const bars = listsRef.current;
+      if (bars.length >= MAX_LISTS_PER_USER) {
+        notify(`You can have up to ${MAX_LISTS_PER_USER} bars. Delete one to add another.`, { tone: 'error' });
+        return null;
+      }
+      const bar = {
+        id: newId(),
+        name: clean,
+        color: color || nextBarColor(bars),
+        position: (bars.length ? Math.max(...bars.map((b) => b.position)) : -1) + 1,
+        created_at: new Date().toISOString(),
+      };
+      setLists((prev) => [...prev, bar]);
+      enqueue({ type: 'createBar', bar: { id: bar.id, name: bar.name, color: bar.color } });
+      return bar.id;
+    },
+    [enqueue, notify]
+  );
+
+  const updateList = useCallback(
+    (id, updates) => {
+      const next = { ...updates };
+      if (next.name !== undefined) {
+        next.name = String(next.name).trim().replace(/\s+/g, ' ').slice(0, LIST_NAME_MAX);
+        if (!next.name) return;
+      }
+      setLists((prev) => prev.map((l) => (l.id === id ? { ...l, ...next } : l)));
+      enqueue({ type: 'updateBar', id, updates: next });
+    },
+    [enqueue]
+  );
+
+  // Moves a bar up (-1) or down (+1) among the others.
+  const moveList = useCallback(
+    (id, delta) => {
+      const bars = [...listsRef.current].sort((a, b) => a.position - b.position);
+      const from = bars.findIndex((l) => l.id === id);
+      const to = from + delta;
+      if (from === -1 || to < 0 || to >= bars.length) return;
+      [bars[from], bars[to]] = [bars[to], bars[from]];
+      const renumbered = bars.map((l, i) => ({ ...l, position: i }));
+      setLists(renumbered);
+      enqueue({ type: 'reorderBars', ids: renumbered.map((l) => l.id) });
+    },
+    [enqueue]
+  );
+
+  // Deleting a bar never deletes its tasks: they move to another bar (the first remaining one by default).
+  const removeList = useCallback(
+    (id, moveTo) => {
+      const bars = [...listsRef.current].sort((a, b) => a.position - b.position);
+      const target = bars.find((l) => l.id === id);
+      const others = bars.filter((l) => l.id !== id);
+      if (!target || others.length === 0) return;
+      const destination = others.find((l) => l.id === moveTo) ?? others[0];
+      const count = tasksRef.current.filter((t) => t.list_id === id && !t.deleted_at).length;
+
+      setTasks((prev) => prev.map((t) => (t.list_id === id ? { ...t, list_id: destination.id } : t)));
+      setLists((prev) => prev.filter((l) => l.id !== id));
+      setSelectedList((current) => (current === id ? 'All' : current));
+      enqueue({ type: 'deleteBar', id, moveTo: destination.id });
+      notify(
+        count > 0
+          ? `Deleted “${target.name}”. Its ${count} task${count === 1 ? '' : 's'} moved to “${destination.name}”.`
+          : `Deleted “${target.name}”.`
+      );
+    },
+    [enqueue, notify]
   );
 
   const toggleTask = useCallback(
@@ -451,6 +617,9 @@ export function TaskProvider({ children }) {
     [tasks]
   );
 
+  const listById = useMemo(() => new Map(lists.map((l) => [l.id, l])), [lists]);
+  const orderedLists = useMemo(() => [...lists].sort((a, b) => a.position - b.position), [lists]);
+
   const filteredTasks = useMemo(() => {
     const today = getTodayDateString();
     const query = searchQuery.trim().toLowerCase();
@@ -458,10 +627,10 @@ export function TaskProvider({ children }) {
     return (filter === 'deleted' ? trashedTasks : activeTasks)
       .filter((task) => {
         if (query) {
-          const haystack = `${task.title} ${task.category} ${task.description || ''}`.toLowerCase();
+          const haystack = `${task.title} ${listById.get(task.list_id)?.name ?? ''} ${task.description || ''}`.toLowerCase();
           if (!haystack.includes(query)) return false;
         }
-        if (selectedCategory !== 'All' && task.category !== selectedCategory) return false;
+        if (selectedList !== 'All' && task.list_id !== selectedList) return false;
 
         switch (filter) {
           case 'completed':
@@ -477,9 +646,9 @@ export function TaskProvider({ children }) {
             return true;
         }
       })
-      // Open tasks first (stable: keeps newest-first inside each group). Deleted keeps most-recently-deleted first.
-      .sort((a, b) => (filter === 'deleted' ? 0 : Number(a.completed) - Number(b.completed)));
-  }, [activeTasks, trashedTasks, filter, selectedCategory, searchQuery]);
+      // Open tasks first, then the user's own order inside each bar. Deleted keeps most-recently-deleted first.
+      .sort((a, b) => (filter === 'deleted' ? 0 : compareTasks(a, b)));
+  }, [activeTasks, trashedTasks, filter, selectedList, searchQuery, listById]);
 
   // Progress and counts only look at tasks that aren't deleted.
   const stats = useMemo(() => {
@@ -503,11 +672,18 @@ export function TaskProvider({ children }) {
     filteredTasks,
     filter,
     setFilter,
-    selectedCategory,
-    setSelectedCategory,
+    lists: orderedLists,
+    listById,
+    selectedList,
+    setSelectedList,
     searchQuery,
     setSearchQuery,
     addTask,
+    moveTask,
+    addList,
+    updateList,
+    moveList,
+    removeList,
     toggleTask,
     editTask,
     deleteTask,

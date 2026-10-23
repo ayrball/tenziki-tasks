@@ -1,14 +1,14 @@
 import { motion } from 'framer-motion';
 import { Calendar, Check, ChevronDown, Flame, Layers, Search, Trash2, X } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
-import { CATEGORIES } from '../lib/taskMeta';
 
 export default function FilterBar() {
   const {
     filter,
     setFilter,
-    selectedCategory,
-    setSelectedCategory,
+    lists,
+    selectedList,
+    setSelectedList,
     searchQuery,
     setSearchQuery,
     totalCount,
@@ -79,7 +79,7 @@ export default function FilterBar() {
                 {tab.count > 0 && (
                   <span
                     className={`rounded-full px-1.5 text-[11px] font-bold tabular-nums leading-5 ${
-                      active ? 'bg-white/25 text-white' : 'bg-surface-2 text-muted'
+                      active ? 'bg-white/25 text-white' : 'hidden bg-surface-2 text-muted sm:inline'
                     }`}
                   >
                     {tab.count}
@@ -116,15 +116,15 @@ export default function FilterBar() {
 
         <div className="relative shrink-0">
           <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            aria-label="Filter by category"
-            className="appearance-none rounded-2xl border border-line bg-surface py-2.5 pl-3.5 pr-9 text-sm font-semibold text-fg transition-colors hover:border-line-strong focus-visible:border-accent/60"
+            value={lists.some((l) => l.id === selectedList) ? selectedList : 'All'}
+            onChange={(e) => setSelectedList(e.target.value)}
+            aria-label="Show only one bar"
+            className="max-w-[9.5rem] appearance-none truncate rounded-2xl border border-line bg-surface py-2.5 pl-3.5 pr-9 text-sm font-semibold text-fg transition-colors hover:border-line-strong focus-visible:border-accent/60 sm:max-w-[14rem]"
           >
-            <option value="All">All categories</option>
-            {CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.id}
+            <option value="All">All bars</option>
+            {lists.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
               </option>
             ))}
           </select>

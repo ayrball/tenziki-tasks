@@ -23,7 +23,7 @@ function readInitialTheme() {
 
 function MainApp() {
   const { isAuthenticated } = useAuth();
-  const { tasks } = useTasks();
+  const { tasks, lists } = useTasks();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(readInitialTheme);
 
@@ -55,7 +55,7 @@ function MainApp() {
         <p>{isAuthenticated ? 'Synced to your Google account' : 'Saved on this device · Sign in to sync across devices'}</p>
         <button
           type="button"
-          onClick={() => downloadTasksJson(tasks)}
+          onClick={() => downloadTasksJson(tasks, lists)}
           className="rounded-md px-2 py-1 font-semibold underline-offset-2 transition-colors hover:text-fg hover:underline"
         >
           Export my tasks

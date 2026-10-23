@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowUp, Calendar, CalendarX2, Plus, StickyNote } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
 import { formatDisplayDate, getTodayDateString, getTomorrowDateString } from '../lib/dateUtils';
-import { CATEGORIES, PRIORITIES, openDatePicker } from '../lib/taskMeta';
+import { PRIORITIES, barDot, openDatePicker } from '../lib/taskMeta';
 
 const chipBase = 'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors';
 const chipOff = 'text-muted hover:bg-surface-2 hover:text-fg';
@@ -14,12 +14,14 @@ function isTypingTarget(el) {
 }
 
 export default function TaskInput() {
-  const { addTask } = useTasks();
+  const { addTask, lists } = useTasks();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [showNote, setShowNote] = useState(false);
   const [priority, setPriority] = useState('medium');
-  const [category, setCategory] = useState('Personal');
+  const [chosenList, setChosenList] = useState(null);
+  // The bar picked here, or the first bar if none was picked (or the picked one has since been deleted).
+  const listId = lists.some((l) => l.id === chosenList) ? chosenList : (lists[0]?.id ?? null);
   const [dueDate, setDueDate] = useState(getTodayDateString);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -51,7 +53,7 @@ export default function TaskInput() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
-    addTask({ title, priority, category, due_date: dueDate, description });
+    addTask({ title, priority, list_id: listId, due_date: dueDate, description });
     setTitle('');
     setDescription('');
     setShowNote(false);
@@ -168,17 +170,17 @@ export default function TaskInput() {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Category">
-                  {CATEGORIES.map((c) => (
+                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Add to bar">
+                  {lists.map((l) => (
                     <button
-                      key={c.id}
+                      key={l.id}
                       type="button"
-                      onClick={() => setCategory(c.id)}
-                      aria-pressed={category === c.id}
-                      className={`${chipBase} ${category === c.id ? chipOn : chipOff}`}
+                      onClick={() => setChosenList(l.id)}
+                      aria-pressed={listId === l.id}
+                      className={`${chipBase} max-w-[10rem] ${listId === l.id ? chipOn : chipOff}`}
                     >
-                      <span className={`h-2 w-2 rounded-full ${c.dot}`} aria-hidden />
-                      {c.id}
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${barDot(l.color)}`} aria-hidden />
+                      <span className="truncate">{l.name}</span>
                     </button>
                   ))}
                 </div>

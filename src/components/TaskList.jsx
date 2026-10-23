@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, pointerWithin, rectIntersection, useSensor, useSensors } from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { ArrowLeft, CalendarX2, CheckCircle2, ChevronRight, Inbox, PartyPopper, SearchX, Trash2 } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
 import { TRASH_RETENTION_DAYS } from '../lib/limits';
-import TaskItem from './TaskItem';
+import { groupByList } from '../lib/lists';
+import AddBar from './AddBar';
+import BarSection from './BarSection';
 import DeletedItem from './DeletedItem';
+import TaskItem from './TaskItem';
+import TaskPreview from './TaskPreview';
 
 const PAGE_SIZE = 60;
 
@@ -155,33 +161,130 @@ function DeletedHeader({ count, onEmpty }) {
   );
 }
 
+const COLLAPSED_KEY = 'tenziki_collapsed_bars';
+
+// Which bars are collapsed (remembered on this device).
+function useCollapsedBars() {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]'));
+    } catch {
+      return new Set();
+    }
+  });
+
+  const save = (next) => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+    } catch {
+      // storage unavailable: it just won't be remembered
+    }
+    return next;
+  };
+  const toggle = (id) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return save(next);
+    });
+  const expand = (id) =>
+    setCollapsed((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return save(next);
+    });
+  return [collapsed, toggle, expand];
+}
+
+// Prefer the task under the pointer; otherwise the bar it is over.
+function collide(args) {
+  const hits = pointerWithin(args);
+  const found = hits.length > 0 ? hits : rectIntersection(args);
+  const task = found.find((h) => h.data?.droppableContainer?.data?.current?.type === 'task');
+  return task ? [task] : found.slice(0, 1);
+}
+
+// Where would the dragged task land?
+//   over a bar (not a task): the end of that bar.
+//   over a task in the same bar: the slot of that task (the same order the sortable list shows while dragging).
+//   over a task in another bar: before or after it, depending on which half of it the dragged card is in.
+function resolveDrop(active, over) {
+  if (!over || over.id === active.id) return null;
+  const data = over.data.current;
+  if (data?.type === 'bar') return { listId: data.listId, target: { atEnd: true } };
+  if (data?.type !== 'task') return null;
+
+  const from = active.data.current?.sortable;
+  const to = over.data.current?.sortable;
+  let after;
+  if (from && to && from.containerId === to.containerId) {
+    after = to.index > from.index;
+  } else {
+    const rect = active.rect.current.translated;
+    after = rect ? rect.top + rect.height / 2 > over.rect.top + over.rect.height / 2 : false;
+  }
+  return { listId: data.listId, target: after ? { afterId: over.id } : { beforeId: over.id } };
+}
+
+const sameDrop = (a, b) => a?.listId === b?.listId && JSON.stringify(a?.target) === JSON.stringify(b?.target);
+
 export default function TaskList() {
   const {
     filteredTasks,
     filter,
     setFilter,
     searchQuery,
-    selectedCategory,
+    selectedList,
     totalCount,
     deletedCount,
     noDateCount,
     emptyTrash,
+    lists,
+    listById,
+    moveTask,
   } = useTasks();
   const inDeleted = filter === 'deleted';
-  const [visibleCount, showMore] = useProgressive(filteredTasks.length, `${filter}|${selectedCategory}|${searchQuery}`);
+  const [visibleCount, showMore] = useProgressive(filteredTasks.length, `${filter}|${selectedList}|${searchQuery}`);
   const shown = filteredTasks.slice(0, visibleCount);
   const remaining = filteredTasks.length - shown.length;
 
+  const [collapsed, toggleCollapsed, expand] = useCollapsedBars();
+  const [active, setActive] = useState(null); // the task being dragged: { id, listId, task }
+  const [drop, setDrop] = useState(null); // where it would land: { listId, target }
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const resetDrag = () => {
+    setActive(null);
+    setDrop(null);
+  };
+
+  // Screen-reader announcements use task and bar names instead of internal ids.
+  const titleOf = (id) => `“${filteredTasks.find((t) => t.id === id)?.title ?? 'task'}”`;
+  const placeOf = (over) =>
+    over?.data.current?.type === 'bar'
+      ? `in the ${listById.get(over.data.current.listId)?.name} bar`
+      : `next to ${titleOf(over?.id)}`;
+  const announcements = {
+    onDragStart: ({ active: a }) => `Picked up ${titleOf(a.id)}. Use the arrow keys to move it, then Space to drop it.`,
+    onDragOver: ({ active: a, over }) => (over && over.id !== a.id ? `${titleOf(a.id)} is ${placeOf(over)}.` : undefined),
+    onDragEnd: ({ active: a, over }) => (over && over.id !== a.id ? `Dropped ${titleOf(a.id)} ${placeOf(over)}.` : `${titleOf(a.id)} was not moved.`),
+    onDragCancel: ({ active: a }) => `Cancelled. ${titleOf(a.id)} did not move.`,
+  };
+
   const hint =
-    filter === 'today' && noDateCount > 0 && !searchQuery.trim() && selectedCategory === 'All' ? (
+    filter === 'today' && noDateCount > 0 && !searchQuery.trim() && selectedList === 'All' ? (
       <NoDateHint count={noDateCount} onShow={() => setFilter('nodate')} />
     ) : null;
 
-  if (filteredTasks.length === 0) {
-    const filtering = searchQuery.trim() || selectedCategory !== 'All';
+  if (filteredTasks.length === 0 && !(filter === 'all' && lists.length > 0 && !searchQuery.trim())) {
+    const filtering = searchQuery.trim() || selectedList !== 'All';
     let state;
     if (filtering) {
-      state = { icon: SearchX, title: 'No matches', hint: 'Try a different search or category.', tone: 'text-muted bg-surface-2' };
+      state = { icon: SearchX, title: 'No matches', hint: 'Try a different search or bar.', tone: 'text-muted bg-surface-2' };
     } else if (inDeleted) {
       state = { icon: Trash2, title: 'Nothing deleted', hint: 'Tasks you delete show up here until you remove them for good.', tone: 'text-muted bg-surface-2' };
     } else if (filter === 'nodate') {
@@ -202,6 +305,7 @@ export default function TaskList() {
           <EmptyState {...state} />
         </div>
         {hint}
+        {!inDeleted && lists.length > 0 && <AddBar />}
       </>
     );
   }
@@ -222,37 +326,76 @@ export default function TaskList() {
     );
   }
 
-  // In the All view, label where finished tasks begin.
-  const firstDoneIndex = filter === 'all' ? filteredTasks.findIndex((t) => t.completed) : -1;
-  const showDivider = firstDoneIndex > 0;
+  // No bars yet (signed in, first load, nothing saved): show tasks plainly until the account's bars arrive.
+  if (lists.length === 0) {
+    return (
+      <ul className="mt-5" aria-label="Tasks">
+        {shown.map((task) => (
+          <li key={task.id} className="list-none">
+            <TaskItem task={task} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  // Bars with tasks in this view are shown; in All, every bar is, even empty ones, so tasks can be dragged into them.
+  const showEmptyBars = filter === 'all' && !searchQuery.trim();
+  // Load a page of rows top to bottom through the bars, so what is on screen is always one unbroken run.
+  const fullGroups = groupByList(filteredTasks, lists);
+  const groups = fullGroups
+    .map((g, i) => {
+      const before = fullGroups.slice(0, i).reduce((sum, earlier) => sum + earlier.tasks.length, 0);
+      return { list: g.list, tasks: g.tasks.slice(0, Math.max(0, visibleCount - before)), count: g.tasks.length };
+    })
+    .filter((g) => g.count > 0 || (showEmptyBars && (selectedList === 'All' || selectedList === g.list.id)));
 
   return (
     <>
       {filter === 'nodate' && <NoDateHeader onBack={() => setFilter('today')} />}
-      <ul className="mt-5" aria-label="Tasks">
-        <AnimatePresence initial={false}>
-          {shown.flatMap((task, index) => {
-            const item = <TaskItem key={task.id} task={task} />;
-            if (showDivider && index === firstDoneIndex) {
-              return [
-                <motion.li
-                  key="completed-divider"
-                  layout="position"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="list-none pb-2 pt-3 text-xs font-bold uppercase tracking-wider text-faint"
-                >
-                  Completed
-                </motion.li>,
-                item,
-              ];
-            }
-            return [item];
-          })}
-        </AnimatePresence>
-        {remaining > 0 && <LoadMore remaining={remaining} onMore={showMore} />}
-      </ul>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collide}
+        accessibility={{ announcements }}
+        onDragStart={({ active: a }) =>
+          setActive({ id: a.id, listId: a.data.current?.listId, task: filteredTasks.find((t) => t.id === a.id) })
+        }
+        onDragOver={(e) => {
+          const next = resolveDrop(e.active, e.over);
+          setDrop((prev) => (sameDrop(prev, next) ? prev : next));
+        }}
+        onDragEnd={(e) => {
+          const next = resolveDrop(e.active, e.over);
+          resetDrag();
+          if (next) {
+            moveTask(e.active.id, next.listId, next.target);
+            expand(next.listId); // so the task doesn't vanish into a collapsed bar
+          }
+        }}
+        onDragCancel={resetDrag}
+      >
+        {groups.map((g) => (
+          <BarSection
+            key={g.list.id}
+            bar={g.list}
+            tasks={g.tasks}
+            count={g.count}
+            index={lists.findIndex((l) => l.id === g.list.id)}
+            total={lists.length}
+            collapsed={collapsed.has(g.list.id)}
+            onToggle={() => toggleCollapsed(g.list.id)}
+            hint={drop && drop.listId === g.list.id && active?.listId !== g.list.id ? drop.target : null}
+            showEmptyHint={g.count === 0}
+          />
+        ))}
+        {remaining > 0 && (
+          <ul className="mt-3">
+            <LoadMore remaining={remaining} onMore={showMore} />
+          </ul>
+        )}
+        <DragOverlay>{active?.task ? <TaskPreview task={active.task} /> : null}</DragOverlay>
+      </DndContext>
+      <AddBar />
       {hint}
     </>
   );

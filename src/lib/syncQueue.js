@@ -43,6 +43,16 @@ export function runOp(token, op) {
       return api.clearCompleted(token);
     case 'completeAll':
       return api.completeAll(token);
+    case 'reorderTasks':
+      return api.reorderTasks(token, op.moves);
+    case 'createBar':
+      return api.createBar(token, op.bar);
+    case 'updateBar':
+      return api.updateBar(token, op.id, op.updates);
+    case 'deleteBar':
+      return api.deleteBar(token, op.id, op.moveTo);
+    case 'reorderBars':
+      return api.reorderBars(token, op.ids);
     default:
       return Promise.resolve();
   }

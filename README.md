@@ -4,7 +4,8 @@ A fast, minimal task manager. React 19 + Vite + Tailwind 4 + Framer Motion on th
 
 - Works without an account: tasks are saved in the browser.
 - Sign in with Google to sync across devices. Tasks created while signed out are moved into the account on first sign-in.
-- Categories, priorities, due dates (stored as real dates), notes (autosaved), search, filters, light/dark theme.
+- **Bars:** your own named, coloured sections that tasks live in (they replace the old fixed categories). Add, rename, recolour, reorder, collapse and delete them. **Drag a task** by its grip handle to reorder it or move it to another bar (mouse, touch or keyboard), or use "Move to" in the task. Deleting a bar never deletes its tasks: they move to the first remaining bar.
+- Priorities, due dates (stored as real dates), notes (autosaved), search, filters, light/dark theme.
 - **Deleted section:** deleting moves a task there (with Undo). Restore it, or delete it forever (two clicks). Anything left there is removed after 30 days.
 - **Works offline:** installable as an app. Changes made offline are queued, survive a reload, and are sent in order when you're back online. Open tabs and devices pick up each other's changes automatically.
 - Press `N` anywhere to add a task. Arrow keys move between the filter tabs. "Export my tasks" in the footer downloads everything as JSON.
@@ -22,6 +23,7 @@ Defined once in `src/lib/limits.js` (the Worker enforces them, the UI explains t
 
 - 3,000 tasks per account (including Deleted). Creating more returns a clear error instead of silently dropping the oldest.
 - Deleted tasks are removed for good after 30 days.
+- 30 bars per account, names up to 40 characters, and at least one bar always remains.
 - Sessions last 30 days unless revoked.
 
 ## Security headers
@@ -44,12 +46,12 @@ Open <http://localhost:5173>. Without a Google client id the app runs in local-o
 ## Tests
 
 ```bash
-npm run test:unit   # dates, offline queue, export (fast, no server)
+npm run test:unit   # dates, offline queue, export, install help, bar ordering (fast, no server)
 npm test            # API tests against a throwaway Worker + database (starts and stops its own)
 npm run test:all
 ```
 
-The API tests cover auth, session revocation, per-user isolation, validation, the Deleted section (including that permanent deletion is refused for tasks not in Deleted), the 30-day purge, and the 3,000-task limit. They never touch your real local data or the remote database.
+The API tests cover auth, session revocation, per-user isolation, validation, the Deleted section (including that permanent deletion is refused for tasks not in Deleted), the 30-day purge, the 3,000-task limit, and bars (creating, renaming, ordering, deleting without losing tasks, the 30-bar limit, and that you can never file a task into someone else's bar). They never touch your real local data or the remote database.
 
 ## Setting up Google sign-in
 
@@ -69,11 +71,13 @@ npm run db:migrate:remote   # applies any new migrations (always run this BEFORE
 npm run deploy              # builds and deploys the Worker + static assets
 ```
 
-Migrations are in `migrations/` and are safe to re-run. The Worker expects all of them: it reads the `deleted_at` column (0002) and the `sessions` table (0003), so deploying code before migrating makes the API fail.
+Migrations are in `migrations/`. The Worker expects all of them: it reads the `deleted_at` column (0002), the `sessions` table (0003) and the `lists` table and `list_id`/`position` columns (0004), so deploying code before migrating makes the API fail.
 
 Sessions issued by older versions have no server-side record and are rejected, so everyone signs in once after the upgrade.
 
 ### Existing data
+
+**Bars.** The first time an account loads its data after bars were introduced, the Worker creates its bars from the categories it already used (plus the standard Personal, Work, Fitness and Ideas) and files every existing task into the matching bar, keeping the old newest-first order. Nothing is lost; the old `category` column is kept but no longer used.
 
 Earlier versions identified users by an unverified email-derived id (`google-<email>`). The first time someone signs in with Google, any rows under their verified email's old id are re-assigned to their real account automatically.
 
@@ -82,11 +86,12 @@ Earlier versions identified users by an unverified email-derived id (`google-<em
 | Path | What it is |
 | --- | --- |
 | `src/worker.js` | API: Google sign-in, sessions, task CRUD, Deleted section (D1) |
+| `src/bars.js` | Bars: creating/ordering/deleting them, ownership checks, seeding from old categories |
 | `migrations/` | D1 schema |
 | `public/_headers`, `public/sw.js` | Security headers; offline service worker |
 | `src/context/` | Auth, tasks (optimistic updates, offline queue, live sync, undo), toasts |
 | `src/components/` | UI |
-| `src/lib/` | API client, offline queue, dates, export, limits, shared task metadata |
+| `src/lib/` | API client, offline queue, dates, export, limits, bar and ordering logic (`lists.js`), shared task metadata |
 | `src/index.css` | Design tokens (light/dark, checked for WCAG AA contrast) |
 | `tests/` | API and unit tests |
 | `scripts/make-icons.mjs` | Regenerates the PNG app icons |
@@ -94,6 +99,7 @@ Earlier versions identified users by an unverified email-derived id (`google-<em
 ## Known limits
 
 - Sign-in uses Google only.
+- Dragging into a bar works with the bars you can see: in Today, Urgent and Done only bars that have a matching task are shown, so to move a task into a hidden bar use "Move to" in the task or switch to All (which shows every bar, even empty ones).
 - Conflicts are last-write-wins per change: if two devices edit the same task while offline, the later change to reach the server wins.
 - The session token is kept in `localStorage`. The CSP and React's escaping guard against script injection; an httpOnly-cookie session would be a further hardening step.
 

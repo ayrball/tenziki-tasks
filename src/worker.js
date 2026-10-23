@@ -10,10 +10,11 @@
 //      a copied token stops working immediately instead of living until it expires.
 
 import { MAX_TASKS_PER_USER, SESSION_TTL_DAYS, TRASH_RETENTION_DAYS } from './lib/limits.js';
+import { HttpError, json, readJson } from './http.js';
+import { assertOwnsList, defaultListId, ensureLists, handleLists, handleReorder } from './bars.js';
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * SESSION_TTL_DAYS;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_BODY_BYTES = 16 * 1024;
 
 const PRIORITIES = ['low', 'medium', 'high'];
 const CATEGORIES = ['Personal', 'Work', 'Fitness', 'Ideas'];
@@ -23,34 +24,6 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const encoder = new TextEncoder();
 
 // ---------- small helpers ----------
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
-}
-
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-
-async function readJson(request) {
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, 'Request body too large');
-  try {
-    return JSON.parse(text || '{}');
-  } catch {
-    throw new HttpError(400, 'Invalid JSON');
-  }
-}
 
 function toBase64Url(bytes) {
   let bin = '';
@@ -212,6 +185,17 @@ function validateTask(input, { partial }) {
     }
     out.due_date = input.due_date;
   }
+  // Which bar the task is in (ownership is checked against the database by the caller) and where in that bar.
+  if (input.list_id !== undefined) {
+    if (typeof input.list_id !== 'string' || !ID_RE.test(input.list_id)) fail('Invalid bar');
+    out.list_id = input.list_id;
+  }
+  if (input.position !== undefined) {
+    if (typeof input.position !== 'number' || !Number.isFinite(input.position) || Math.abs(input.position) > 1e13) {
+      fail('Invalid position');
+    }
+    out.position = input.position;
+  }
   return out;
 }
 
@@ -238,12 +222,19 @@ async function handleApi(request, env, url) {
     return revokeSessions(env, await requireUser(request, env), { all: true });
   }
 
-  if (!pathname.startsWith('/api/tasks')) throw new HttpError(404, 'Not found');
+  if (!pathname.startsWith('/api/tasks') && !pathname.startsWith('/api/lists')) throw new HttpError(404, 'Not found');
 
   const session = await requireUser(request, env);
   const db = env.todo_db;
 
+  if (pathname.startsWith('/api/lists')) {
+    const response = await handleLists(request, env, url, session);
+    if (response) return response;
+    throw new HttpError(404, 'Not found');
+  }
+
   if (pathname === '/api/tasks' && method === 'GET') {
+    await ensureLists(db, session.uid); // creates a new account's bars, and files older tasks into them
     // Deleted tasks are kept for TRASH_RETENTION_DAYS, then removed for good.
     const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * DAY_MS).toISOString();
     await db
@@ -253,7 +244,7 @@ async function handleApi(request, env, url) {
 
     // The cap on create keeps every account below this limit, so the list is never silently cut off.
     const { results } = await db
-      .prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY created_at DESC LIMIT ?')
+      .prepare('SELECT * FROM tasks WHERE user_id = ? ORDER BY position, created_at DESC LIMIT ?')
       .bind(session.uid, MAX_TASKS_PER_USER + 500)
       .all();
     return json((results || []).map(formatRow));
@@ -271,6 +262,13 @@ async function handleApi(request, env, url) {
         `You've reached the limit of ${MAX_TASKS_PER_USER} tasks. Permanently delete some from Deleted to add more.`
       );
     }
+    // Every task lives in one of the user's own bars: the one asked for, or their first bar.
+    await ensureLists(db, session.uid);
+    let listId = task.list_id;
+    if (listId) await assertOwnsList(db, session.uid, listId);
+    else listId = await defaultListId(db, session.uid);
+    const position = task.position ?? -Date.now() / 1000; // newest nearest the top, like before
+
     const createdAt = typeof body.created_at === 'string' && !Number.isNaN(Date.parse(body.created_at))
       ? new Date(body.created_at).toISOString()
       : new Date().toISOString();
@@ -287,7 +285,7 @@ async function handleApi(request, env, url) {
     // OR IGNORE: re-sending the same id (retry) never overwrites or hijacks another user's row.
     const result = await db
       .prepare(
-        'INSERT OR IGNORE INTO tasks (id, user_id, title, description, completed, priority, category, due_date, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT OR IGNORE INTO tasks (id, user_id, title, description, completed, priority, category, due_date, created_at, deleted_at, list_id, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .bind(
         body.id,
@@ -296,10 +294,12 @@ async function handleApi(request, env, url) {
         task.description || '',
         task.completed ?? 0,
         task.priority || 'medium',
-        task.category || 'Personal',
+        task.category || 'Personal', // legacy column: the app now uses bars (list_id)
         task.due_date ?? null,
         createdAt,
-        deletedAt
+        deletedAt,
+        listId,
+        position
       )
       .run();
     return json({ success: true, created: result.meta.changes > 0 }, 201);
@@ -331,6 +331,10 @@ async function handleApi(request, env, url) {
     return json({ success: true, deleted: result.meta.changes });
   }
 
+  if (pathname === '/api/tasks/reorder' && method === 'POST') {
+    return handleReorder(request, db, session);
+  }
+
   const restoreMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/restore$/);
   if (restoreMatch && method === 'POST') {
     const id = decodeURIComponent(restoreMatch[1]);
@@ -352,6 +356,7 @@ async function handleApi(request, env, url) {
       const updates = validateTask(await readJson(request), { partial: true });
       const fields = Object.keys(updates);
       if (fields.length === 0) throw new HttpError(400, 'Nothing to update');
+      if (updates.list_id) await assertOwnsList(db, session.uid, updates.list_id); // can't file a task into someone else's bar
       const result = await db
         .prepare(
           `UPDATE tasks SET ${fields.map((f) => `${f} = ?`).join(', ')} WHERE id = ? AND user_id = ? AND deleted_at IS NULL`

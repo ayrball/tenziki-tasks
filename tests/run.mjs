@@ -17,7 +17,7 @@ const iso = (daysAgo) => new Date(Date.now() - daysAgo * 86400000).toISOString()
 
 // Sessions and old Deleted rows that individual tests rely on.
 const SEED_SQL = [
-  ...['user-a', 'user-b', 'user-c', 'user-limit'].map(
+  ...['user-a', 'user-b', 'user-c', 'user-limit', 'user-legacy', 'user-bars', 'user-bars-b'].map(
     (u) => `INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES ('sid-${u}', '${u}', '${iso(0)}', ${now + 3600});`
   ),
   `INSERT INTO sessions (id, user_id, created_at, expires_at) VALUES ('sid-user-a-phone', 'user-a', '${iso(0)}', ${now + 3600});`,
@@ -28,6 +28,10 @@ const SEED_SQL = [
   `INSERT INTO tasks (id, user_id, title, created_at, deleted_at) VALUES ('old-deleted', 'user-purge', 'Deleted 40 days ago', '${iso(50)}', '${iso(40)}');`,
   `INSERT INTO tasks (id, user_id, title, created_at, deleted_at) VALUES ('recent-deleted', 'user-purge', 'Deleted 10 days ago', '${iso(50)}', '${iso(10)}');`,
   `INSERT INTO tasks (id, user_id, title, created_at) VALUES ('old-active', 'user-purge', 'Active, created long ago', '${iso(400)}');`,
+  // An account from before bars existed: tasks with old categories and no bars yet.
+  `INSERT INTO tasks (id, user_id, title, category, created_at, position) VALUES ('leg-1', 'user-legacy', 'Work thing', 'Work', '${iso(3)}', -3);`,
+  `INSERT INTO tasks (id, user_id, title, category, created_at, position) VALUES ('leg-2', 'user-legacy', 'Gym', 'Fitness', '${iso(2)}', -2);`,
+  `INSERT INTO tasks (id, user_id, title, category, created_at, position) VALUES ('leg-3', 'user-legacy', 'A book', 'Reading', '${iso(1)}', -1);`,
 ].join(' ');
 
 // workerd outlives the npx/wrangler wrapper processes, and wrangler restarts workerd if only that is killed.
@@ -102,7 +106,7 @@ if (!secret) {
   process.exit(1);
 }
 
-const test = spawnSync(process.execPath, ['--test', '--test-timeout=120000', 'tests/api.test.mjs'], {
+const test = spawnSync(process.execPath, ['--test', '--test-timeout=120000', 'tests/api.test.mjs', 'tests/bars.test.mjs'], {
   stdio: 'inherit',
   env: { ...process.env, API_BASE: base, TEST_SESSION_SECRET: secret },
 });

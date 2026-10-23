@@ -3,13 +3,14 @@ import { motion } from 'framer-motion';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import { useTasks } from '../context/TaskContext';
 import { timeAgo } from '../lib/dateUtils';
-import { categoryDot } from '../lib/taskMeta';
+import { barDot } from '../lib/taskMeta';
 
 const CONFIRM_WINDOW_MS = 4000;
 
 // A task in the Deleted section: restore it, or delete it for good (two clicks, no undo).
 export default function DeletedItem({ task }) {
-  const { restoreTask, deleteForever } = useTasks();
+  const { restoreTask, deleteForever, listById } = useTasks();
+  const bar = listById.get(task.list_id);
   const [confirming, setConfirming] = useState(false);
 
   // The confirm state expires so a stray click later can't permanently delete anything.
@@ -42,8 +43,8 @@ export default function DeletedItem({ task }) {
               Deleted {timeAgo(task.deleted_at)}
             </span>
             <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-surface-2 px-1.5 py-0.5 leading-4 text-muted">
-              <span className={`h-1.5 w-1.5 rounded-full ${categoryDot(task.category)}`} aria-hidden />
-              {task.category}
+              <span className={`h-1.5 w-1.5 rounded-full ${barDot(bar?.color)}`} aria-hidden />
+              {bar?.name ?? 'No bar'}
             </span>
           </div>
         </div>
